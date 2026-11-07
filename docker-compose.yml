@@ -1,0 +1,84 @@
+name: krishisense
+
+services:
+  db:
+    image: mysql:8.4
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: krishisense
+      MYSQL_USER: ks
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  ml_service:
+    build: ./ml_service
+    environment:
+      MODELS_DIR: /models
+    volumes:
+      - ./models:/models          # disease.onnx, labels.json, price_model.joblib live here
+    ports: ["8001:8001"]
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://ks:${DB_PASSWORD}@db:3306/krishisense?charset=utf8mb4
+      ML_SERVICE_URL: http://ml_service:8001
+      UPLOAD_DIR: /srv/uploads
+    volumes:
+      - uploads:/srv/uploads
+    depends_on:
+      db: { condition: service_healthy }
+      ml_service: { condition: service_started }
+    ports: ["8000:8000"]            # API docs: http://localhost:8000/api/docs
+
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["3000:80"]              # App: http://localhost:3000
+
+  # ---- one-off jobs (not started by "docker compose up") ----
+  # docker compose --profile jobs run --rm ingest     -> pull latest mandi prices
+  # docker compose --profile jobs run --rm retrain    -> retrain price model, then reload ml_service
+  # docker compose --profile jobs run --rm alerts     -> check price alerts and send SMS / push
+  ingest:
+    profiles: ["jobs"]
+    build: ./pipelines
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://ks:${DB_PASSWORD}@db:3306/krishisense?charset=utf8mb4
+    depends_on:
+      db: { condition: service_healthy }
+
+  alerts:
+    profiles: ["jobs"]
+    build: ./backend
+    command: ["python", "-m", "app.jobs.run_alerts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://ks:${DB_PASSWORD}@db:3306/krishisense?charset=utf8mb4
+    depends_on:
+      db: { condition: service_healthy }
+
+  retrain:
+    profiles: ["jobs"]
+    build: ./ml_service
+    command: ["python", "train_price.py", "--out", "/models"]
+    environment:
+      DATABASE_URL: mysql+pymysql://ks:${DB_PASSWORD}@db:3306/krishisense?charset=utf8mb4
+    volumes:
+      - ./models:/models
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  dbdata:
+  uploads:

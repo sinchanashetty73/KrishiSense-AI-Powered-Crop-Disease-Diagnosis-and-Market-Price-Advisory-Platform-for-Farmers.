@@ -1,0 +1,9 @@
+{
+  "name": "KrishiSense",
+  "short_name": "KrishiSense",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f8f2",
+  "theme_color": "#2f7d32",
+  "icons": []
+}

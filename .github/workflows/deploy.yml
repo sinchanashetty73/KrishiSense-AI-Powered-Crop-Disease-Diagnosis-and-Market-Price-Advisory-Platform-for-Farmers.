@@ -1,0 +1,56 @@
+name: Test, build and deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write   # for AWS OIDC login
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Backend tests
+        run: |
+          pip install -r backend/requirements.txt
+          cd backend && pytest -q
+      - name: ML service tests
+        run: |
+          pip install -r ml_service/requirements.txt
+          cd ml_service && pytest -q
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Frontend build
+        run: cd frontend && npm install && npm run build
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push images
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          for svc in backend ml_service frontend pipelines; do
+            docker build -t $REGISTRY/krishisense-$svc:$TAG -t $REGISTRY/krishisense-$svc:latest ./$svc
+            docker push $REGISTRY/krishisense-$svc:$TAG
+            docker push $REGISTRY/krishisense-$svc:latest
+          done
+      - name: Roll out new versions
+        run: |
+          for svc in backend ml_service frontend; do
+            aws ecs update-service --cluster ${{ vars.ECS_CLUSTER }} --service $svc --force-new-deployment
+          done
