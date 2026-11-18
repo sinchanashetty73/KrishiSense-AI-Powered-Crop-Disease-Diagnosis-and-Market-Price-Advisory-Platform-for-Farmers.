@@ -1,13 +1,44 @@
+# secrets
 .env
+.env.*
+!.env.example
+
+# python
 __pycache__/
 *.pyc
-node_modules/
-dist/
-*.db
-uploads/
-data/
 .venv/
 venv/
+.pytest_cache/
+
+# node
+node_modules/
+dist/
+
+# models (too big for git; keep only the placeholder)
 models/*
 !models/.gitkeep
-.pytest_cache/
+*.keras
+*.onnx
+*.joblib
+*.zip
+
+# local data
+*.db
+*.sqlite
+uploads/
+data/
+
+# editor / OS / notebooks
+.vscode/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# local test files
+ml_service/test_model.py
+ml_service/*.jpg
+*.keras
+*.onnx
+*.joblib
+.env.*
+!.env.example

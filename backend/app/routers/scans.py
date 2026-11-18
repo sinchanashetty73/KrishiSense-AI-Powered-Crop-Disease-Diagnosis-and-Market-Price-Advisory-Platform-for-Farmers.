@@ -13,6 +13,56 @@ from ..schemas import DiseaseOut, FeedbackIn, ScanHistoryItem, ScanOut, TopPredi
 router = APIRouter(prefix="/scans", tags=["scans"])
 ALLOWED = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
+# General advice used when a class has no row in the Disease table yet.
+# Order matters: the first group whose keyword appears in the label is used.
+GENERAL_ADVICE = [
+    (("healthy",),
+     "The leaf looks healthy. Keep monitoring, water at the base of the plant and keep the field clean."),
+    (("virus", "mosaic", "leafroll"),
+     "This looks like a virus disease. Sprays do not cure viruses. Remove and destroy badly affected "
+     "plants, control the insects that spread it (aphids, whiteflies, mealybugs, thrips) and use "
+     "virus-free planting material."),
+    (("bacterial", "fire_blight", "halo"),
+     "This looks like a bacterial problem. Remove and destroy affected leaves or plants, avoid overhead "
+     "watering, do not work in the field when plants are wet, and rotate crops. Use any chemical only "
+     "on expert advice."),
+    (("rust", "mildew", "blight", "spot", "scab", "rot", "mold", "mould", "anthracnose",
+      "scorch", "measles", "esca", "smut", "frogeye"),
+     "This looks like a fungal problem. Remove and destroy affected leaves, avoid wetting the leaves, "
+     "give plants space for air flow, clean tools, and rotate crops. Ask your agriculture officer which "
+     "fungicide, dose and timing suit your crop before spraying."),
+]
+
+
+def _general_advice(label: str) -> str:
+    low = label.lower()
+    for keys, text in GENERAL_ADVICE:
+        if any(k in low for k in keys):
+            return text
+    return "Please confirm the problem and the right treatment with your local agriculture officer."
+
+
+def _pretty(label: str) -> str:
+    """'Grape___Leaf_spot' -> 'Leaf spot'"""
+    return label.split("___")[-1].replace("_", " ")
+
+
+def _crop_name(label: str) -> str:
+    return label.split("___")[0].replace("Grapevine", "Grape")
+
+
+def _crop_hint(pred: dict) -> str | None:
+    """When the disease is unclear but the crop is clear, tell the farmer the crop and the candidates."""
+    crop = pred.get("crop")
+    if not crop or float(pred.get("crop_confidence") or 0) < 0.5:
+        return None
+    names = [_pretty(t["label"]) for t in pred.get("top", []) if _crop_name(t["label"]) == crop][:3]
+    if not names:
+        return None
+    return (f"This looks like a {crop.replace('_', ' ')} leaf, but I'm not sure which problem it is. "
+            f"Possible: {', '.join(names)}. Please confirm with your local agriculture officer, "
+            "or retake the photo in daylight, close to a single affected leaf.")
+
 
 @router.post("", response_model=ScanOut)
 def create_scan(file: UploadFile = File(...), crop_id: int | None = Form(None),
@@ -37,11 +87,16 @@ def create_scan(file: UploadFile = File(...), crop_id: int | None = Form(None),
     uncertain = conf < settings.confidence_threshold
     message = None
     if uncertain:
-        message = ("Not sure about this one. Retake the photo in daylight, close to a single "
-                   "affected leaf, with a plain background.")
+        message = _crop_hint(pred) or (
+            "Not sure about this one. Retake the photo in daylight, close to a single "
+            "affected leaf, with a plain background.")
     elif disease and crop_id and disease.crop_id and disease.crop_id != crop_id:
         uncertain = True
         message = "The leaf looks like a different crop than the one you selected. Please check and retry."
+    elif disease is None:
+        message = (f"Detected: {_pretty(label)} ({_crop_name(label).replace('_', ' ')}). "
+                   f"{_general_advice(label)} This is automated advice, not a prescription. "
+                   "Confirm with your local agriculture officer before applying chemicals.")
 
     key = storage.save_image(user.id, data, ALLOWED[file.content_type])
     scan = Scan(user_id=user.id, crop_id=crop_id or (disease.crop_id if disease else None),

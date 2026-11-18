@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { speak } from "./Chat.jsx";
 
+const pretty = (l) => String(l).replace(/___/g, " · ").replace(/_/g, " ");
+
 export default function Scan({ t, lang, crops, cropName, go }) {
   const [cropId, setCropId] = useState("");
   const [file, setFile] = useState(null);
@@ -37,6 +39,9 @@ export default function Scan({ t, lang, crops, cropName, go }) {
   const sendFeedback = async (correct) => { await api.feedback(result.id, correct).catch(() => {}); setFb(true); };
   const d = result?.disease;
   const summary = d ? `KrishiSense: ${d.name}. ${d.organic_treatment} ${d.chemical_treatment}`.trim() : "";
+  const fallbackSummary = result ? `KrishiSense: ${pretty(result.label)}. ${result.message || ""}`.trim() : "";
+  const others = (result?.top || []).slice(1)
+    .map((x) => `${pretty(x.label)} ${Math.round(x.confidence * 100)}%`).join(" · ");
 
   return (
     <>
@@ -66,6 +71,11 @@ export default function Scan({ t, lang, crops, cropName, go }) {
             <>
               <span className="badge warn">?</span>
               <p>{result.message}</p>
+              {result.top?.length > 0 && (
+                <p className="muted">
+                  {result.top.map((x) => `${pretty(x.label)} ${Math.round(x.confidence * 100)}%`).join(" · ")}
+                </p>
+              )}
               <details open><summary>📷 {t("guideTitle")}</summary>
                 <ul><li>{t("tip1")}</li><li>{t("tip2")}</li><li>{t("tip3")}</li><li>{t("tip4")}</li></ul></details>
             </>
@@ -75,9 +85,7 @@ export default function Scan({ t, lang, crops, cropName, go }) {
             <>
               <h2>{d.name}</h2>
               <span className={`badge ${result.confidence > 0.8 ? "ok" : "warn"}`}>{t("confidence")}: {Math.round(result.confidence * 100)}%</span>
-              {result.top?.length > 1 && (
-                <p className="muted">{result.top.slice(1).map((x) => `${x.label.replace(/___/g, " · ").replace(/_/g, " ")} ${Math.round(x.confidence * 100)}%`).join(" · ")}</p>
-              )}
+              {result.top?.length > 1 && <p className="muted">{others}</p>}
               {d.symptoms && <><h3>{t("symptoms")}</h3><div>{d.symptoms}</div></>}
               {d.organic_treatment && <><h3>{t("organic")}</h3><div>{d.organic_treatment}</div></>}
               {d.chemical_treatment && <><h3>{t("chemical")}</h3><div>{d.chemical_treatment}</div></>}
@@ -90,7 +98,17 @@ export default function Scan({ t, lang, crops, cropName, go }) {
               </p>
             </>
           ) : (
-            <p>{result.label} ({Math.round(result.confidence * 100)}%)</p>
+            <>
+              <h2>{/healthy/i.test(result.label) ? `✅ ${t("healthy")}` : pretty(result.label)}</h2>
+              <span className={`badge ${result.confidence > 0.8 ? "ok" : "warn"}`}>{t("confidence")}: {Math.round(result.confidence * 100)}%</span>
+              {others && <p className="muted">{others}</p>}
+              {result.message && <p style={{ margin: "14px 0", lineHeight: 1.6 }}>{result.message}</p>}
+              <p className="chips">
+                <button className="chip" onClick={() => speak(fallbackSummary, lang)}>🔊 {t("readAloud")}</button>
+                <a className="chip" style={{ textDecoration: "none", display: "inline-block" }} target="_blank" rel="noreferrer"
+                  href={`https://wa.me/?text=${encodeURIComponent(fallbackSummary)}`}>💬 {t("shareWhatsApp")}</a>
+              </p>
+            </>
           )}
           <p className="muted">{result.disclaimer}</p>
           {fb ? <p>{t("thanks")}</p> : (
@@ -110,7 +128,7 @@ export default function Scan({ t, lang, crops, cropName, go }) {
             {history.slice(0, 8).map((h) => (
               <tr key={h.id}>
                 <td>{new Date(h.created_at + "Z").toLocaleDateString()}</td>
-                <td>{h.uncertain ? "?" : h.predicted_label.replace(/___/g, " · ").replace(/_/g, " ")}</td>
+                <td>{h.uncertain ? "?" : pretty(h.predicted_label)}</td>
                 <td>{Math.round(h.confidence * 100)}%</td>
               </tr>
             ))}

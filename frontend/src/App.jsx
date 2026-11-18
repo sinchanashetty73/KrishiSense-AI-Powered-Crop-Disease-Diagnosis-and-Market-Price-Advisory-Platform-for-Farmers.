@@ -13,11 +13,13 @@ import Alerts from "./pages/Alerts.jsx";
 import Outbreaks from "./pages/Outbreaks.jsx";
 import Profile from "./pages/Profile.jsx";
 
-// TO CHANGE: add a page by adding it here, to PAGES below, and creating src/pages/<Name>.jsx
+// TO CHANGE: add a page by adding it here, to PAGES and ICON below, and creating src/pages/<Name>.jsx
 const TABS = [["home", "tabHome"], ["scan", "tabScan"], ["spray", "tabSpray"], ["prices", "tabPrices"], ["market", "tabMarket"],
-  ["stock", "tabStock"], ["chat", "tabChat"], ["alerts", "tabAlerts"], ["outbreaks", "tabOutbreaks"], ["profile", "tabProfile"]];
+  ["stock", "tabStock"], ["chat", "tabChat"], ["alerts", "tabAlerts"], ["profile", "tabProfile"]];
 const PAGES = { home: Home, scan: Scan, spray: Spray, prices: Prices, market: Market, stock: Stock, chat: Chat,
   alerts: Alerts, outbreaks: Outbreaks, profile: Profile };
+const ICON = { home: "🏠", scan: "📷", spray: "🧪", prices: "📈", market: "🛒",
+  stock: "📦", chat: "💬", alerts: "🔔", outbreaks: "🗺️", profile: "👤" };
 
 export default function App() {
   const [lang, setLang] = useState(localStorage.getItem("ks_lang") || "en");
@@ -69,11 +71,16 @@ export default function App() {
 
       <Page key={tab + JSON.stringify(params)} {...shared} setUser={setUser} onLogout={() => { setToken(null); setUser(null); }} />
 
-      <nav className="tabs"><div className="inner">
-        {TABS.map(([id, label]) => (
-          <button key={id} className={tab === id ? "active" : ""} onClick={() => go(id)}>{t(label)}</button>
-        ))}
-      </div></nav>
+     <nav className="tabs"><div className="inner">
+  {TABS.map(([id, label]) => (
+    <button key={id} className={tab === id ? "active" : ""} onClick={() => go(id)}>
+      <span className="ico">{ICON[id]}</span> {t(label)}
+    </button>
+  ))}
+  <button className="logout" onClick={() => { setToken(null); setUser(null); }}>
+    <span className="ico">🚪</span> Logout
+  </button>
+</div></nav>
     </div>
   );
 }
